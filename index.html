@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador HDFVVC / CRRT - Versión Definitiva</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans p-3 md:p-6 min-h-screen">
+    <div class="max-w-7xl mx-auto bg-white shadow-2xl rounded-2xl p-4 md:p-8 border border-slate-200">
+        
+        <!-- HEADER -->
+        <header class="border-b border-slate-200 pb-4 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-extrabold text-blue-700 tracking-tight">Simulador Cinético HDFVVC / CRRT</h1>
+                <p class="text-xs md:text-sm text-slate-500 font-medium mt-1">
+                    Modelo biofísico con integración numérica RK4, degradación continua de membrana y orden clínico personalizado.
+                </p>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl text-right shrink-0">
+                <span class="text-[10px] text-blue-600 font-bold uppercase tracking-wider block">Estado del Motor</span>
+                <span class="text-xs text-green-700 font-semibold">● Configuración Óptima</span>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- CONTROLES -->
+            <div class="lg:col-span-5 space-y-4 bg-slate-50 p-4 rounded-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+                <h2 class="font-bold text-slate-800 text-sm border-b pb-2 flex justify-between">
+                    <span>Parámetros Clínicos Organizados</span>
+                    <span class="text-xs text-blue-600 font-semibold">Panel de Control</span>
+                </h2>
+
+                <!-- 1. ANTROPOMETRÍA, VOLEMIA Y HEMATOCRITO -->
+                <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-2">
+                    <label class="block text-xs font-bold text-slate-700">1. Antropometría, Volemia y Hematocrito:</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="block text-[10px] text-slate-600 font-semibold">Sexo:</label>
+                            <select id="genderSelect" class="w-full p-1.5 border rounded-lg text-xs bg-white">
+                                <option value="male" selected>Varón</option>
+                                <option value="female">Mujer</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-slate-600 font-semibold">Talla (cm):</label>
+                            <input type="number" id="heightInput" value="175" class="w-full p-1.5 border rounded-lg text-xs font-semibold bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-slate-600 font-semibold">Peso (kg):</label>
+                            <input type="number" id="weight" value="85" class="w-full p-1.5 border rounded-lg text-xs font-bold text-blue-700 bg-white">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <div>
+                            <label class="block text-[10px] text-slate-600 font-semibold">Hematocrito (%):</label>
+                            <input type="number" id="hct" value="30" min="15" max="55" class="w-full mt-1 p-1.5 border rounded-lg text-xs font-bold text-slate-800 bg-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-slate-600 font-semibold">Catabolismo / G:</label>
+                            <select id="inflammationSelect" class="w-full mt-1 p-1.5 border rounded-lg text-xs bg-white font-medium">
+                                <option value="basal" selected>Basal / Estable</option>
+                                <option value="moderate">Moderado</option>
+                                <option value="severe">Grave / Sepsis</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="p-2 bg-slate-50 rounded-lg border text-[11px] space-y-1">
+                        <div class="flex justify-between"><span class="text-slate-600">Devine IBW / ABW:</span><span id="weightCalcDisplay" class="font-bold text-slate-800">-- / -- kg</span></div>
+                        <div class="flex justify-between"><span class="text-slate-600">Volemia Sangre Total:</span><span id="volemiaTotalDisplay" class="font-bold text-slate-800">-- L</span></div>
+                        <div class="flex justify-between items-center pt-0.5 border-t"><span class="text-blue-900 font-bold">Vol. Distribución Soluto:</span><span id="volemiaPlasmaDisplay" class="font-extrabold text-blue-700 text-xs">-- L</span></div>
+                    </div>
+                </div>
+
+                <!-- 2. SOLUTO O MOLÉCULA OBJETIVO -->
+                <div class="space-y-1 bg-white p-3 rounded-xl border border-slate-200">
+                    <label class="block text-xs font-bold text-slate-700">2. Soluto o Molécula Objetivo:</label>
+                    <select id="moleculeSelect" class="w-full p-2 border rounded-lg bg-white text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="urea" selected>Urea (Agua Corporal Total ~60%)</option>
+                        <option value="creatinine">Creatinina (Bajo peso molecular)</option>
+                        <option value="potassium">Potasio K+ (Catión intracelular/extracelular)</option>
+                        <option value="magnesium">Magnesio Mg2+ (Sk ~0.80)</option>
+                        <option value="phosphate">Fósforo / Fosfato PO43- (Sk ~0.90)</option>
+                        <option value="il6">IL-6 (Citocina Proinflamatoria)</option>
+                    </select>
+                    <p id="molDescription" class="text-[11px] text-slate-500 italic mt-1 leading-tight"></p>
+                </div>
+
+                <!-- 3. CONCENTRACIONES INICIAL Y META -->
+                <div class="grid grid-cols-2 gap-2 bg-blue-50/60 p-3 rounded-xl border border-blue-100">
+                    <div>
+                        <label class="block text-xs font-bold text-blue-950">3. Concentración Inicial:</label>
+                        <div class="flex items-center space-x-1 mt-1">
+                            <input type="number" id="c0" value="140" step="0.1" class="w-full p-1.5 border border-blue-200 rounded-lg bg-white text-xs font-bold text-slate-800 outline-none">
+                            <span id="unitC0" class="text-[10px] font-bold text-blue-800 shrink-0">mg/dL</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-blue-950">Concentración Meta:</label>
+                        <div class="flex items-center space-x-1 mt-1">
+                            <input type="number" id="ctarget" value="50" step="0.1" class="w-full p-1.5 border border-blue-200 rounded-lg bg-white text-xs font-bold text-slate-800 outline-none">
+                            <span id="unitTarget" class="text-[10px] font-bold text-blue-800 shrink-0">mg/dL</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. HEMOFILTRO, PTM Y USO -->
+                <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-2">
+                    <label class="block text-xs font-bold text-slate-700">4. Hemofiltro, PTM y Uso:</label>
+                    <select id="filterSelect" class="w-full p-2 border rounded-lg text-xs font-bold text-slate-800 bg-white">
+                        <option value="st150" selected>ST150 (AN69ST - Kuf 45, K0A 480 ml/min)</option>
+                        <option value="m100">M100 (AN69 - Kuf 35, K0A 350 ml/min)</option>
+                        <option value="oxiris">oXiris (Alta Adsorción - Kuf 40, K0A 420 ml/min)</option>
+                    </select>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[10px] text-slate-600 font-semibold">Uso del Filtro (Horas):</label>
+                            <input type="number" id="filterAgeInput" value="0" min="0" max="200" step="1" class="w-full p-1.5 border rounded-lg text-xs font-bold bg-white text-indigo-900">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-slate-600 font-semibold">Coef. Cribado (Sk):</label>
+                            <div class="p-1.5 bg-indigo-50/50 rounded-lg border text-xs font-extrabold text-indigo-900 text-center" id="skDisplay">--</div>
+                        </div>
+                    </div>
+
+                    <div class="p-2 bg-indigo-50/30 rounded-lg border text-[11px] space-y-1">
+                        <div class="flex justify-between"><span class="text-slate-600">Kuf Efectivo:</span><span id="kufEffDisplay" class="font-bold text-indigo-900">-- ml/h/mmHg</span></div>
+                        <div class="flex justify-between"><span class="text-slate-600">K0A Efectivo:</span><span id="k0aEffDisplay" class="font-bold text-indigo-900">-- ml/min</span></div>
+                    </div>
+                </div>
+
+                <!-- 5. SELECCIÓN DE SOLUCIONES COMERCIALES -->
+                <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-2">
+                    <label class="block text-xs font-bold text-slate-700">5. Selección de Soluciones Comerciales:</label>
+                    <div class="grid grid-cols-3 gap-1.5">
+                        <div>
+                            <label class="block text-[10px] text-slate-500 font-semibold">Pre-Filtro:</label>
+                            <select id="fluidPreSelect" class="w-full p-1 border rounded bg-white text-[11px]">
+                                <option value="regiocit" selected>Regiocit</option>
+                                <option value="biphozyl">Biphozyl (Fósforo)</option>
+                                <option value="prismasol2">PrismaSol 2</option>
+                                <option value="prismasol4">PrismaSol 4</option>
+                                <option value="phoxilium">Phoxilium</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-slate-500 font-semibold">Post-Filtro:</label>
+                            <select id="fluidPostSelect" class="w-full p-1 border rounded bg-white text-[11px]">
+                                <option value="biphozyl" selected>Biphozyl (Fósforo)</option>
+                                <option value="prismasol4">PrismaSol 4</option>
+                                <option value="prismasol2">PrismaSol 2</option>
+                                <option value="phoxilium">Phoxilium</option>
+                                <option value="regiocit">Regiocit</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] text-slate-500 font-semibold">Diálisis:</label>
+                            <select id="fluidDialysisSelect" class="w-full p-1 border rounded bg-white text-[11px]">
+                                <option value="biphozyl" selected>Biphozyl (Fósforo)</option>
+                                <option value="prismasol4">PrismaSol 4</option>
+                                <option value="prismasol2">PrismaSol 2</option>
+                                <option value="phoxilium">Phoxilium</option>
+                                <option value="regiocit">Regiocit</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 6. FLUJOS DE TERAPIA Y DOSIS -->
+                <div class="space-y-2 bg-amber-50/60 p-3 rounded-xl border border-amber-200">
+                    <label class="block text-xs font-bold text-amber-950">6. Flujos de Terapia, Bomba y Dosis:</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-800">Flujo de Bomba (ml/min):</label>
+                            <input type="number" id="qb" value="200" min="50" max="500" class="w-full mt-1 p-1 border rounded bg-white text-xs font-bold text-slate-800">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-semibold text-red-900">UF Neta (ml/h):</label>
+                            <input type="number" id="qufneta" value="100" step="10" class="w-full mt-1 p-1 border rounded bg-white text-xs font-bold text-red-600">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-semibold text-amber-900">Pre-Filtro (ml/h):</label>
+                            <input type="number" id="qpre" value="1000" step="50" class="w-full p-1 border border-amber-200 rounded bg-white text-xs font-semibold">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-semibold text-blue-900">Post-Filtro (ml/h):</label>
+                            <input type="number" id="qpost" value="1000" step="50" class="w-full p-1 border border-amber-200 rounded bg-white text-xs font-semibold">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-[10px] font-semibold text-purple-900">Diálisis (ml/h):</label>
+                            <input type="number" id="qd" value="1500" step="50" class="w-full p-1 border border-amber-200 rounded bg-white text-xs font-semibold">
+                        </div>
+                    </div>
+                    
+                    <div class="pt-2 border-t border-amber-200 flex justify-between items-center">
+                        <span class="text-xs font-bold text-slate-800">Dosis Efluente:</span>
+                        <div class="text-right">
+                            <span id="qeffMlH" class="text-xs font-bold text-slate-800">-- ml/h</span>
+                            <span id="qeffKgH" class="block text-sm font-extrabold text-blue-700">-- ml/kg/h</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ESTADO PTM Y FF -->
+                <div id="ffAlertBox" class="p-3 rounded-xl border text-xs font-medium space-y-1">
+                    <div class="flex justify-between"><span>Fracción Filtración:</span><span id="ffDisplay" class="font-bold font-mono">--%</span></div>
+                    <div class="flex justify-between"><span>Factor Dilución:</span><span id="gammaDisplay" class="font-bold font-mono">--</span></div>
+                    <div class="flex justify-between"><span>Saturación Dializado:</span><span id="sdDisplay" class="font-bold font-mono">--</span></div>
+                    <div class="flex justify-between text-indigo-900 font-bold"><span>Presión Transmembrana:</span><span id="tmpDisplay" class="font-extrabold font-mono">-- mmHg</span></div>
+                    <div class="flex justify-between pt-1 border-t"><span>Estado Filtro:</span><span id="filterStatusDisplay" class="font-bold">--</span></div>
+                </div>
+
+                <!-- RESULTADOS -->
+                <div class="p-3 bg-blue-900 text-white rounded-xl space-y-1 shadow-md">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-blue-200 font-medium">Equilibrio Instantáneo:</span>
+                        <span id="ceqDisplay" class="text-sm font-extrabold text-amber-300">--</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs pt-1 border-t border-blue-800">
+                        <span class="text-blue-200 font-medium">Tiempo Estimado a Meta:</span>
+                        <span id="timeResult" class="text-base font-extrabold text-white">--</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- PANELS DE GRÁFICAS -->
+            <div class="lg:col-span-7 space-y-5 flex flex-col justify-between">
+                
+                <!-- GRAFICA 1 -->
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex justify-between items-center mb-3">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-800">1. Evolución Cinética RK4 con Fouling Real</h3>
+                            <p class="text-[11px] text-slate-500">Degradación continua acoplada paso a paso a la concentración</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs text-slate-500 font-semibold">Escala Gráfica:</span>
+                            <select id="timeScaleSelect" class="p-1.5 border rounded-lg bg-slate-50 text-xs font-bold outline-none">
+                                <option value="hours" selected>24 Horas</option>
+                                <option value="days">7 Días (168h)</option>
+                                <option value="extended">14 Días (336h)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="relative h-64 md:h-72 w-full">
+                        <canvas id="decayChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- GRAFICA 2 -->
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="mb-3">
+                        <h3 class="text-sm font-bold text-slate-800">2. Sensibilidad: Dosis Efluente vs. Tiempo a Meta</h3>
+                        <p class="text-[11px] text-slate-500">Evaluación continua de aceleración depurativa sin límite artificial de vida útil.</p>
+                    </div>
+                    <div class="relative h-64 md:h-72 w-full">
+                        <canvas id="doseTimeChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- ACLARAMIENTO SINTÉTICO -->
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs space-y-2">
+                    <h4 class="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Aclaramiento Eficaz Inicial:</h4>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-white p-2 rounded-lg border">
+                            <span class="text-[10px] text-slate-500 block">Convectivo</span>
+                            <span id="kconvDisplay" class="font-bold text-blue-700 text-xs">-- ml/min</span>
+                        </div>
+                        <div class="bg-white p-2 rounded-lg border">
+                            <span class="text-[10px] text-slate-500 block">Difusivo</span>
+                            <span id="kdiffDisplay" class="font-bold text-purple-700 text-xs">-- ml/min</span>
+                        </div>
+                        <div class="bg-white p-2 rounded-lg border border-blue-200 bg-blue-50/30">
+                            <span class="text-[10px] text-blue-900 block font-semibold">Aclaramiento Total</span>
+                            <span id="ktotalDisplay" class="font-extrabold text-blue-800 text-xs">-- ml/min</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const filterMatrix = {
+            st150: { name: "ST150 (AN69ST)", kuf: 45, k0a: 480 },
+            m100:  { name: "M100 (AN69)", kuf: 35, k0a: 350 },
+            oxiris:{ name: "oXiris", kuf: 40, k0a: 420 }
+        };
+
+        const moleculeData = {
+            urea:       { name: "Urea", defaultC0: 140, target: 50, unit: "mg/dL", vdTrav: 0.60, diffAble: true, sk: 1.0, desc: "Molécula hidrosoluble pequeña. ACT 60%." },
+            creatinine: { name: "Creatinina", defaultC0: 5.5, target: 1.5, unit: "mg/dL", vdTrav: 0.60, diffAble: true, sk: 1.0, desc: "Bajo peso molecular. ACT 60%." },
+            potassium:  { name: "Potasio (K+)", defaultC0: 6.2, target: 4.2, unit: "mEq/L", vdTrav: 0.60, diffAble: true, sk: 1.0, desc: "Catión monovalente. Libre depuración." },
+            magnesium:  { name: "Magnesio", defaultC0: 3.2, target: 2.0, unit: "mg/dL", vdTrav: 0.30, diffAble: true, sk: 0.80, desc: "Unión proteica moderada (Sk ~0.80)." },
+            phosphate:  { name: "Fósforo", defaultC0: 7.5, target: 3.5, unit: "mg/dL", vdTrav: 0.35, diffAble: true, sk: 0.90, desc: "Anión intracelular/extracelular (Sk ~0.90)." },
+            il6:        { name: "IL-6", defaultC0: 600, target: 50, unit: "pg/mL", vdTrav: 0.25, diffAble: false, sk: 0.25, desc: "Citocina proinflamatoria. Convección / Adsorción." }
+        };
+
+        const fluidData = {
+            biphozyl:   { potassium: 4.0, magnesium: 1.5, phosphate: 3.1 },
+            regiocit:   { potassium: 0.0, magnesium: 1.5, phosphate: 0.0 },
+            prismasol2: { potassium: 2.0, magnesium: 1.5, phosphate: 0.0 },
+            prismasol4: { potassium: 4.0, magnesium: 1.5, phosphate: 0.0 },
+            phoxilium:  { potassium: 4.0, magnesium: 1.5, phosphate: 3.8 }
+        };
+
+        const gRates = {
+            urea: { basal: 0.12, moderate: 0.22, severe: 0.38 },
+            creatinine: { basal: 0.012, moderate: 0.018, severe: 0.025 },
+            phosphate: { basal: 0.005, moderate: 0.012, severe: 0.022 },
+            potassium: { basal: 0, moderate: 0, severe: 0 },
+            magnesium: { basal: 0, moderate: 0, severe: 0 },
+            il6: { basal: 0, moderate: 0, severe: 0 }
+        };
+
+        const moleculeSelect = document.getElementById('moleculeSelect');
+        const molDescription = document.getElementById('molDescription');
+        const filterSelect = document.getElementById('filterSelect');
+        const filterAgeInput = document.getElementById('filterAgeInput');
+        const inflammationSelect = document.getElementById('inflammationSelect');
+        const genderSelect = document.getElementById('genderSelect');
+        const heightInput = document.getElementById('heightInput');
+        const weightInput = document.getElementById('weight');
+        const fluidPreSelect = document.getElementById('fluidPreSelect');
+        const fluidPostSelect = document.getElementById('fluidPostSelect');
+        const fluidDialysisSelect = document.getElementById('fluidDialysisSelect');
+        const qbInput = document.getElementById('qb');
+        const hctInput = document.getElementById('hct');
+        const c0Input = document.getElementById('c0');
+        const ctargetInput = document.getElementById('ctarget');
+        const qpreInput = document.getElementById('qpre');
+        const qpostInput = document.getElementById('qpost');
+        const qdInput = document.getElementById('qd');
+        const qufnetaInput = document.getElementById('qufneta');
+        const timeScaleSelect = document.getElementById('timeScaleSelect');
+
+        let decayChart = null, doseTimeChart = null;
+
+        function parseNum(val, def = 0) { let n = parseFloat(val); return isNaN(n) ? def : n; }
+
+        moleculeSelect.addEventListener('change', () => {
+            const mol = moleculeData[moleculeSelect.value];
+            if (mol) { 
+                c0Input.value = mol.defaultC0; 
+                ctargetInput.value = mol.target; 
+                document.getElementById('unitC0').innerText = mol.unit; 
+                document.getElementById('unitTarget').innerText = mol.unit;
+                molDescription.innerText = mol.desc;
+            }
+            updateSimulation();
+        });
+
+        function getDeriv(C, t_hours, params) {
+            let currentAge = params.initialAge + t_hours;
+            let foulingFactor = Math.max(0.15, 1.0 - (0.006 * currentAge) - (params.FF > 0.20 ? 0.004 * currentAge : 0));
+            
+            let Kuf_eff = params.filterNominal.kuf * foulingFactor;
+            let K0a_eff = params.filterNominal.k0a * foulingFactor;
+            let k0a_h = K0a_eff * 60;
+
+            let Sd = 0;
+            if (params.mol.diffAble && params.Qd > 0 && params.Qp_pre > 0) {
+                let NTU = k0a_h / params.Qp_pre;
+                let Z = params.Qp_pre / params.Qd;
+                if (Math.abs(Z - 1.0) < 0.0001) {
+                    Sd = NTU / (1.0 + NTU);
+                } else {
+                    let expTerm = Math.exp(- NTU * (1.0 - Z));
+                    Sd = (1.0 - expTerm) / (1.0 - Z * expTerm);
+                }
+            }
+
+            let K_conv = params.Quf_total * params.Sk * params.gamma;
+            let K_diff = params.Qd * Sd * params.gamma;
+            let K_total = K_conv + K_diff;
+
+            let Mass_infused = (params.Qpre * params.C_pre * params.Sk) + (params.Qpost * params.C_post * params.Sk) + (params.Qd * params.C_dial * Sd);
+            let dCdt = (params.G + Mass_infused - K_total * C) / params.Vs;
+            return dCdt;
+        }
+
+        function rk4Step(C, t, dt, params) {
+            let k1 = getDeriv(C, t, params);
+            let k2 = getDeriv(C + 0.5 * dt * k1, t + 0.5 * dt, params);
+            let k3 = getDeriv(C + 0.5 * dt * k2, t + 0.5 * dt, params);
+            let k4 = getDeriv(C + dt * k3, t + dt, params);
+            return C + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4);
+        }
+
+        function updateSimulation() {
+            const molKey = moleculeSelect.value;
+            const filterKey = filterSelect.value;
+            const filterAge = Math.max(0, parseNum(filterAgeInput.value, 0));
+            const inflamKey = inflammationSelect.value;
+            const gender = genderSelect.value;
+            const fluidPreKey = fluidPreSelect.value;
+            const fluidPostKey = fluidPostSelect.value;
+            const fluidDialKey = fluidDialysisSelect.value;
+            const timeScale = timeScaleSelect.value;
+            
+            const mol = moleculeData[molKey] || moleculeData.urea;
+            const filterNominal = filterMatrix[filterKey] || filterMatrix.st150;
+            molDescription.innerText = mol.desc;
+
+            const heightCm = Math.max(100, parseNum(heightInput.value, 175));
+            const weightReal = Math.max(30, parseNum(weightInput.value, 85));
+            const Hct = Math.min(0.55, Math.max(0.15, parseNum(hctInput.value, 30) / 100));
+
+            let ibw = (gender === 'male') ? 50 + 0.91 * (heightCm - 152.4) : 45.5 + 0.91 * (heightCm - 152.4);
+            ibw = Math.max(30, ibw);
+            let targetWeight = weightReal > ibw * 1.2 ? ibw + 0.4 * (weightReal - ibw) : ibw;
+            document.getElementById('weightCalcDisplay').innerText = `${ibw.toFixed(1)} / ${targetWeight.toFixed(1)} kg`;
+
+            let volemiaTotalLiters = (targetWeight * (gender === 'male' ? 70 : 65)) / 1000;
+            let Vs_liters = targetWeight * mol.vdTrav; 
+            let Vs = Vs_liters * 1000; 
+
+            document.getElementById('volemiaTotalDisplay').innerText = `${volemiaTotalLiters.toFixed(2)} L`;
+            document.getElementById('volemiaPlasmaDisplay').innerText = `${Vs_liters.toFixed(2)} L`;
+
+            let Sk = mol.sk;
+            document.getElementById('skDisplay').innerText = Sk.toFixed(2);
+
+            const Qb_min = Math.max(20, parseNum(qbInput.value, 200));
+            const Qb_h = Qb_min * 60;
+            const Qpre = Math.max(0, parseNum(qpreInput.value, 1000));
+            const Qpost = Math.max(0, parseNum(qpostInput.value, 1000));
+            const Qd = Math.max(0, parseNum(qdInput.value, 1500));
+            const Quf_neta = Math.max(0, parseNum(qufnetaInput.value, 100));
+
+            const Qp = Qb_h * (1 - Hct);
+            const Qp_pre = Qp + Qpre;
+            const Quf_total = Qpre + Qpost + Quf_neta;
+            const FF = Qp_pre > 0 ? Quf_total / Qp_pre : 0;
+            const gamma = Qp_pre > 0 ? Qp / Qp_pre : 1;
+
+            let initialFouling = Math.max(0.15, 1.0 - (0.006 * filterAge) - (FF > 0.20 ? 0.004 * filterAge : 0));
+            let filterKufEff = filterNominal.kuf * initialFouling;
+            let filterK0aEff = filterNominal.k0a * initialFouling;
+
+            document.getElementById('kufEffDisplay').innerText = `${filterKufEff.toFixed(1)} ml/h/mmHg`;
+            document.getElementById('k0aEffDisplay').innerText = `${Math.round(filterK0aEff)} ml/min`;
+
+            const getFluidConc = (fKey) => {
+                const f = fluidData[fKey] || fluidData.prismasol4;
+                return f[molKey] !== undefined ? f[molKey] : 0;
+            };
+
+            const C_pre = getFluidConc(fluidPreKey);
+            const C_post = getFluidConc(fluidPostKey);
+            const C_dial = getFluidConc(fluidDialKey);
+
+            const Qeff_total = Qpre + Qpost + Qd + Quf_neta;
+            const Qeff_kgh = targetWeight > 0 ? Qeff_total / targetWeight : 0;
+
+            document.getElementById('qeffMlH').innerText = `${Math.round(Qeff_total)} ml/h`;
+            document.getElementById('qeffKgH').innerText = `${Qeff_kgh.toFixed(1)} ml/kg/h`;
+
+            let baseTMP = filterKufEff > 0 ? Quf_total / filterKufEff : 400;
+            let frictionTMP = (Qb_min * Hct * 0.4) / Math.max(0.2, initialFouling);
+            const TMP = baseTMP + frictionTMP;
+
+            document.getElementById('ffDisplay').innerText = `${(FF * 100).toFixed(1)}%`;
+            document.getElementById('gammaDisplay').innerText = `${gamma.toFixed(3)}`;
+            document.getElementById('tmpDisplay').innerText = `${Math.round(TMP)} mmHg`;
+
+            const alertBox = document.getElementById('ffAlertBox');
+            const statusDisp = document.getElementById('filterStatusDisplay');
+            if (FF > 0.25 || TMP > 300 || filterAge > 48) {
+                alertBox.className = "p-3 rounded-xl border bg-red-50 border-red-300 text-red-900 text-xs font-medium space-y-1";
+                statusDisp.innerText = filterAge > 48 ? "FILTRO ENVEJECIDO (>48h)" : "ALTO RIESGO COAGULACIÓN";
+            } else if (FF > 0.20 || TMP > 200 || filterAge > 36) {
+                alertBox.className = "p-3 rounded-xl border bg-amber-50 border-amber-300 text-amber-900 text-xs font-medium space-y-1";
+                statusDisp.innerText = "Precaución: PTM Elevada";
+            } else {
+                alertBox.className = "p-3 rounded-xl border bg-green-50 border-green-300 text-green-900 text-xs font-medium space-y-1";
+                statusDisp.innerText = "Operación Segura";
+            }
+
+            let k0a_h = filterK0aEff * 60;
+            let Sd = 0;
+            if (mol.diffAble && Qd > 0 && Qp_pre > 0) {
+                let NTU = k0a_h / Qp_pre;
+                let Z = Qp_pre / Qd;
+                if (Math.abs(Z - 1.0) < 0.0001) {
+                    Sd = NTU / (1.0 + NTU);
+                } else {
+                    let expTerm = Math.exp(- NTU * (1.0 - Z));
+                    Sd = (1.0 - expTerm) / (1.0 - Z * expTerm);
+                }
+            }
+            document.getElementById('sdDisplay').innerText = Sd.toFixed(3);
+
+            const K_conv = Quf_total * Sk * gamma;
+            const K_diff = Qd * Sd * gamma;
+            const K_total = K_conv + K_diff;
+
+            document.getElementById('kconvDisplay').innerText = `${(K_conv / 60).toFixed(1)} ml/min`;
+            document.getElementById('kdiffDisplay').innerText = `${(K_diff / 60).toFixed(1)} ml/min`;
+            document.getElementById('ktotalDisplay').innerText = `${(K_total / 60).toFixed(1)} ml/min`;
+
+            let gRate = (gRates[molKey] && gRates[molKey][inflamKey]) || 0;
+            let G = gRate * targetWeight * 60;
+            const Mass_infused = (Qpre * C_pre * Sk) + (Qpost * C_post * Sk) + (Qd * C_dial * Sd);
+
+            let Ceq = K_total > 0 ? (G + Mass_infused) / K_total : parseNum(c0Input.value, 140);
+            document.getElementById('ceqDisplay').innerText = `${Ceq.toFixed(2)} ${mol.unit}`;
+
+            const C0 = parseNum(c0Input.value, 140);
+            const Ctarget = parseNum(ctargetInput.value, 50);
+
+            let maxTimeHours = 24;
+            if (timeScale === 'days') maxTimeHours = 168;
+            if (timeScale === 'extended') maxTimeHours = 336;
+
+            const steps = 120;
+            const dt = maxTimeHours / steps;
+
+            let rk4Params = {
+                initialAge: filterAge,
+                FF: FF,
+                filterNominal: filterNominal,
+                Qd: Qd,
+                Qp_pre: Qp_pre,
+                Quf_total: Quf_total,
+                Sk: Sk,
+                gamma: gamma,
+                Qpre: Qpre,
+                C_pre: C_pre,
+                Qpost: Qpost,
+                C_post: C_post,
+                C_dial: C_dial,
+                G: G,
+                Vs: Vs,
+                mol: mol
+            };
+
+            let timeLabels = [];
+            let concentrationData = [];
+            let currC = C0;
+            let timeToTarget = null;
+
+            for (let i = 0; i <= steps; i++) {
+                let t_h = i * dt;
+                timeLabels.push(timeScale === 'days' ? `${(t_h / 24).toFixed(1)}d` : timeScale === 'extended' ? `${(t_h / 24).toFixed(1)}d` : `${Math.round(t_h)}h`);
+                concentrationData.push(currC.toFixed(2));
+
+                if (timeToTarget === null) {
+                    if ((C0 > Ctarget && currC <= Ctarget) || (C0 < Ctarget && currC >= Ctarget)) {
+                        timeToTarget = t_h;
+                    }
+                }
+
+                if (i < steps) {
+                    currC = rk4Step(currC, t_h, dt, rk4Params);
+                    if (currC < 0) currC = 0;
+                }
+            }
+
+            let unlimitedTimeToTarget = timeToTarget;
+            if (unlimitedTimeToTarget === null) {
+                let testC = C0;
+                let testDt = 1.0;
+                let maxSearch = 1480;
+                for (let h = 0; h <= maxSearch; h += testDt) {
+                    if ((C0 > Ctarget && testC <= Ctarget) || (C0 < Ctarget && testC >= Ctarget)) {
+                        unlimitedTimeToTarget = h;
+                        break;
+                    }
+                    testC = rk4Step(testC, h, testDt, rk4Params);
+                }
+            }
+
+            if (unlimitedTimeToTarget !== null && isFinite(unlimitedTimeToTarget)) {
+                let days = Math.floor(unlimitedTimeToTarget / 24);
+                let hours = Math.floor(unlimitedTimeToTarget % 24);
+                let mins = Math.round((unlimitedTimeToTarget % 1) * 60);
+                let timeStr = "";
+                if (days > 0) timeStr += `${days}d `;
+                timeStr += `${hours}h ${mins}m`;
+                document.getElementById('timeResult').innerText = timeStr;
+            } else {
+                document.getElementById('timeResult').innerText = "Inalcanzable (Equilibrio superior a meta)";
+            }
+
+            const doseLabels = [], timeByDoseData = [];
+            for (let doseKg = 15; doseKg <= 60; doseKg += 2.5) {
+                doseLabels.push(`${doseKg.toFixed(1)} ml/kg/h`);
+                let targetQeff = doseKg * targetWeight;
+                let scaleRatio = Qeff_total > 0 ? targetQeff / Qeff_total : 1;
+                
+                let tD = null;
+                let testC = C0;
+                let d_dt = 2.0; 
+                let maxSearchHours = 1480; 
+                
+                for (let h = 0; h <= maxSearchHours; h += d_dt) {
+                    if ((C0 > Ctarget && testC <= Ctarget) || (C0 < Ctarget && testC >= Ctarget)) {
+                        tD = h;
+                        break;
+                    }
+                    let testParams = Object.assign({}, rk4Params, {
+                        Qd: Qd * scaleRatio,
+                        Qp_pre: Qp_pre * scaleRatio,
+                        Quf_total: Quf_total * scaleRatio,
+                        Qpre: Qpre * scaleRatio,
+                        Qpost: Qpost * scaleRatio
+                    });
+                    testC = rk4Step(testC, h, d_dt, testParams);
+                }
+                timeByDoseData.push(tD !== null && isFinite(tD) ? tD.toFixed(1) : null);
+            }
+
+            decayChart = renderChart(decayChart, 'decayChart', timeLabels, concentrationData, `Conc. Sanguínea RK4 (${mol.unit})`, 'rgb(29, 78, 216)', timeScale === 'days' || timeScale === 'extended' ? 'Tiempo (días/horas)' : 'Tiempo (horas)');
+            doseTimeChart = renderChart(doseTimeChart, 'doseTimeChart', doseLabels, timeByDoseData, 'Tiempo Estimado a Meta (Horas)', 'rgb(126, 34, 206)', 'Dosis de Efluente Prescrita (ml/kg/h)');
+        }
+
+        function renderChart(chartInstance, canvasId, labels, data, labelName, color, xTitle) {
+            if (chartInstance) {
+                chartInstance.data.labels = labels;
+                chartInstance.data.datasets[0].data = data;
+                chartInstance.data.datasets[0].label = labelName;
+                chartInstance.options.scales.x.title.text = xTitle;
+                chartInstance.update();
+                return chartInstance;
+            } else {
+                const ctx = document.getElementById(canvasId).getContext('2d');
+                return new Chart(ctx, {
+                    type: 'line',
+                    data: { 
+                        labels: labels, 
+                        datasets: [{ 
+                            label: labelName, 
+                            data: data, 
+                            borderColor: color, 
+                            backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.12)'), 
+                            borderWidth: 2.5, 
+                            fill: true, 
+                            tension: 0.3,
+                            spanGaps: true
+                        }] 
+                    },
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: true, position: 'top' } },
+                        scales: {
+                            x: { title: { display: true, text: xTitle, font: { size: 11, weight: 'bold' } } },
+                            y: { title: { display: true, text: 'Magnitud', font: { size: 11, weight: 'bold' } } }
+                        }
+                    }
+                });
+            }
+        }
+
+        [moleculeSelect, filterSelect, filterAgeInput, inflammationSelect, genderSelect, heightInput, weightInput, fluidPreSelect, fluidPostSelect, fluidDialysisSelect, qbInput, hctInput, c0Input, ctargetInput, qpreInput, qpostInput, qdInput, qufnetaInput, timeScaleSelect].forEach(el => {
+            if (el) { 
+                el.addEventListener('input', updateSimulation); 
+                el.addEventListener('change', updateSimulation); 
+            }
+        });
+
+        window.onload = function() { updateSimulation(); };
+    </script>
+</body>
+</html>
